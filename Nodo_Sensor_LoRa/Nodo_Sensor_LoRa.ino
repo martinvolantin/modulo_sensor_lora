@@ -20,29 +20,31 @@
 #include <hal/hal.h>
 #include <SPI.h>
 
+// Definiciones respectivas a la biblioteca DHT
 #include "DHT.h"
 #define DHTPIN 4
 #define DHTTYPE DHT21
 DHT dht(DHTPIN, DHTTYPE);
 
+// Creación de la función MAPfloat, la cual funciona exactamente como la función map pero trabajando con valores float
 float mapf(float x, float in_min, float in_max, float out_min, float out_max){
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 #if !defined(DISABLE_INVERT_IQ_ON_RX)
-#error This example requires DISABLE_INVERT_IQ_ON_RX to be set. Update \
-       config.h in the lmic library to set it.
+#error Este ejemplo requiere que se habilite la opción DISABLE_INVERT_IQ_ON_RX. Actualiza \
+       config.h en la biblioteca lmic para ajustarlo..
 #endif
 
-// How often to send a packet. Note that this sketch bypasses the normal
-// LMIC duty cycle limiting, so when you change anything in this sketch
-// (payload length, frequency, spreading factor), be sure to check if
-// this interval should not also be increased.
-// See this spreadsheet for an easy airtime and duty cycle calculator:
+// Cuan a menudo se deberia enviar un paquete. Nótese que este código sobrepasa el límite de 
+// limitador de ciclos de trabajo de la biblioteca LMIC, así que cuando cambies algo en esta biblioteca.
+// (largo de la carga, frecuencia, factor de ensanchamiento), asegurate de que este valor no deba
+// ser incrementado.
+// Observa este enlace con información sobre el tiempo en el aire y los ciclos de trabajo:
 // https://docs.google.com/spreadsheets/d/1voGAtQAjC1qBmaVuP1ApNKs1ekgUjavHuVQIXyYSvNc
 #define TX_INTERVAL 2000
 
-// Pin mapping
+// Configuración de pines de la extensión DRAGINO
 const lmic_pinmap lmic_pins = {
     .nss = 10,
     .rxtx = LMIC_UNUSED_PIN,
@@ -51,9 +53,9 @@ const lmic_pinmap lmic_pins = {
 };
 
 
-// These callbacks are only used in over-the-air activation, so they are
-// left empty here (we cannot leave them out completely unless
-// DISABLE_JOIN is set in config.h, otherwise the linker will complain).
+// Estos llamados son solamente ocupados en la activacion OTA, así que se
+// dejan vacíos aquí ( no los podemos sacar del todo a menos que se configure
+// la opción DISABLE_JOIN en config.h, de otra forma el enlazador va a dar alertas y no compilará).
 void os_getArtEui (u1_t* buf) { }
 void os_getDevEui (u1_t* buf) { }
 void os_getDevKey (u1_t* buf) { }
@@ -65,10 +67,10 @@ osjob_t txjob;
 osjob_t timeoutjob;
 static void tx_func (osjob_t* job);
 
-// Transmit the given string and call the given function afterwards
+// Transmite la string indicada a la función
 void tx(const char *str, osjobcb_t func) {
   os_radio(RADIO_RST); // Stop RX first
-  delay(1); // Wait a bit, without this os_radio below asserts, apparently because the state hasn't changed yet
+  delay(1); // Espera un momento, sin esto la función os_radio mas abajo afirma, aparentemente porque su estado no ha cambiado aun
   LMIC.dataLen = 0;
   while (*str)
     LMIC.frame[LMIC.dataLen++] = *str++;
@@ -77,12 +79,12 @@ void tx(const char *str, osjobcb_t func) {
   Serial.println("TX");
 }
 
-// Enable rx mode and call func when a packet is received
+// habilita el modo rx cuando recibe un paquete
 void rx(osjobcb_t func) {
   LMIC.osjob.func = func;
   LMIC.rxtime = os_getTime(); // RX _now_
-  // Enable "continuous" RX (e.g. without a timeout, still stops after
-  // receiving a packet)
+  // Habilita RX "continua" (e.j. sin un timeout, aún espera antes de
+  // recibir un paquete)
   os_radio(RADIO_RXON);
   Serial.println("RX");
 }
@@ -92,16 +94,15 @@ static void rxtimeout_func(osjob_t *job) {
 }
 
 static void rx_func (osjob_t* job) {
-  // Blink once to confirm reception and then keep the led on
+  // Parpadea una vez para confirmar la recepción y despues mantiene la luz encendida
   digitalWrite(LED_BUILTIN, LOW); // off
   delay(10);
   digitalWrite(LED_BUILTIN, HIGH); // on
 
-  // Timeout RX (i.e. update led status) after 3 periods without RX
+  // Timeout RX (e.j. actualizar el estado del led) después de 3 periodos sin RX
   os_setTimedCallback(&timeoutjob, os_getTime() + ms2osticks(3*TX_INTERVAL), rxtimeout_func);
 
-  // Reschedule TX so that it should not collide with the other side's
-  // next TX
+  // Recalendarizar la TX para que no colisione con la TX del otro lado
   os_setTimedCallback(&txjob, os_getTime() + ms2osticks(TX_INTERVAL/2), tx_func);
 
   Serial.print("Got ");
@@ -110,7 +111,7 @@ static void rx_func (osjob_t* job) {
   Serial.write(LMIC.frame, LMIC.dataLen);
   Serial.println();
 
-  // Restart RX
+  // Reiniciar RX
   rx(rx_func);
 }
 
@@ -118,28 +119,31 @@ static void txdone_func (osjob_t* job) {
   rx(rx_func);
 }
 
-// log text to USART and toggle LED
+// registrar texto en USART y despues enciende el LED
 static void tx_func (osjob_t* job) {
-  // say hello
+  // decir hola
   float humidity, temperature;
   // leer humidity
   humidity = dht.readHumidity();
   // leer temperature
   temperature = dht.readTemperature();
 
-    float sensorValue = analogRead(A0);
+// Función de lectura del sensor de viento. Debido a que el anemómetro Adafruit lee entre 0 y 116.64 km/h, y toma valores entre
+// 80 y 818 en la lectura analógica del pin, tomamos este valor, lo insertamos en la función mapf, obteniendo un valor float
+  float sensorValue = analogRead(A0);
   float WindSpeed = mapf(sensorValue, 80, 818, 0, 116.64);
   float wind = 0;
   if (WindSpeed > 0){
     wind = WindSpeed;
-  delay(1);        // delay in between reads for stability
+  delay(1);        // retraso entre lecturas para estabilidad
   }
   else{
     wind = 0;
   }
+// Concatenación de los valores de humedad, temperatura y viento
   String str = "";
   str.concat(humidity);
-  str.concat(",");
+  str.concat(",");      // Inserción de comas para separar
   str.concat(temperature);
   str.concat(",");
   str.concat(wind);
@@ -152,7 +156,7 @@ void setup() {
   dht.begin();
   Serial.println("Starting");
   #ifdef VCC_ENABLE
-  // For Pinoccio Scout boards
+  // Para placas Pinoccio Scout
   pinMode(VCC_ENABLE, OUTPUT);
   digitalWrite(VCC_ENABLE, HIGH);
   delay(1000);
@@ -160,13 +164,13 @@ void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);
 
-  // initialize runtime env
+  // inicializar entorno de ejecucion
   os_init();
 
-  // Set up these settings once, and use them for both TX and RX
+  // Configura estos ajustes una vez, y utilizalos tanto en RX como TX
 
 #if defined(CFG_eu868)
-  // Use a frequency in the g3 which allows 10% duty cycling.
+  // Utiliza una frecuencia en el g3 que permita el 10% de ciclos de trabajo.
   LMIC.freq = 869525000;
 #elif defined(CFG_us915)
   LMIC.freq = 903900000;
@@ -174,21 +178,21 @@ void setup() {
 
   // Maximum TX power
   LMIC.txpow = 15;
-  // Use a medium spread factor. This can be increased up to SF12 for
-  // better range, but then the interval should be (significantly)
-  // lowered to comply with duty cycle limits as well.
+  // Utiliza un spreading factor medio. esto puede ser incrementado a SF12 para
+  // un mejor rango, pero el intervalo deberia ser (significantemente)
+  // bajado para cumplir con los limites de ciclos de trabajo.
   LMIC.datarate = DR_SF10;
-  // This sets CR 4/5, BW125 (except for DR_SF7B, which uses BW250)
+  // Esto configura CR 4/5, BW125 (excepto para DR_SF7B, que utiliza BW250)
   LMIC.rps = updr2rps(LMIC.datarate);
 
   Serial.println("Started");
   Serial.flush();
 
-  // setup initial job
+  // Configura el trabajo inicial
   os_setCallback(&txjob, tx_func);
 }
 
 void loop() {
-  // execute scheduled jobs and events
+  // ejecuta los eventos y trabajos calendarizados
   os_runloop_once();
 }
